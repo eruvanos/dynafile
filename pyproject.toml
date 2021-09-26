@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "dynafile"
+version = "0.1.0"
+description = "NoSQLDB following the DynamoDB concept, but for a filebased embedded db."
+authors = ["Maic Siemering <maic@siemering.tech>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+sortedcontainers = "^2.4.0"
+
+[tool.poetry.extras]
+filter = ["filtration"]
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.5"
+black = "^21.9b0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
