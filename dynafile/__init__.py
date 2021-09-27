@@ -5,6 +5,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Union, Optional, List, Callable, NamedTuple
 
+from atomicwrites import atomic_write
 from sortedcontainers import SortedDict
 
 Filter = Union[Callable, "str"]
@@ -40,7 +41,8 @@ class _Partition:
         # TODO not thread save
         import pickle
         self._file.parent.mkdir(parents=True, exist_ok=True)
-        with self._file.open("wb") as file:
+
+        with atomic_write(self._file, mode="wb", overwrite=True) as file:
             pickle.dump(data, file)
 
     @contextmanager

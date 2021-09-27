@@ -42,11 +42,11 @@ Differences:
 - query - index direction
 - query - filter
 - scan - filter
-- batch write
+- batch writer
+- atomic file write
 
 ## Roadmap
 
-- atomic file write
 - event stream hooks
 - GSI - global secondary index
 - update item
@@ -59,6 +59,7 @@ Differences:
 - optimise disc load time (cache partitions in memory, invalidate on file change)
 - conditional put item
 - TTL
+- improve file consistency (options: acidfile)
 
 ## API
 

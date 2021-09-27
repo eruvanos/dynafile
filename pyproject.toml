@@ -8,6 +8,7 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = "^3.8"
 sortedcontainers = "^2.4.0"
+atomicwrites = "^1.4.0"
 
 [tool.poetry.extras]
 filter = ["filtration"]
