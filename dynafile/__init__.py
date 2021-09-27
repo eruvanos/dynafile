@@ -1,43 +1,31 @@
 import hashlib
-from abc import abstractmethod
+import warnings
 from contextlib import contextmanager
+from itertools import groupby
 from pathlib import Path
-from typing import Union, Optional, List, Callable, Iterable
+from typing import Union, Optional, List, Callable, NamedTuple
 
 from sortedcontainers import SortedDict
-
-from dynafile.tree import _Node, Tree
 
 Filter = Union[Callable, "str"]
 
 
+class Action(NamedTuple):
+    op: str
+    data: dict  # contains only key attributes for DELETE calls or the whole item in case of PUT calls
+
+
 class _Partition:
-    """Represents one partition"""
+    """
+    Partition represents a storage node backed by a file.
 
-    @abstractmethod
-    def __init__(self, *, path, sk_attribute):
-        pass
+    All items in one partition need to have the same partition key, which is not enforced within the partition.
+    Partition organizes items only by the sort key attribute.
+    """
 
-    @abstractmethod
-    def add_item(self, key: str, item: dict):
-        pass
-
-    @abstractmethod
-    def get_item(self, key) -> Optional[dict]:
-        pass
-
-    @abstractmethod
-    def query(self, starts_with: str, scan_index_forward: bool) -> Iterable:
-        pass
-
-    @abstractmethod
-    def delete_item(self, key):
-        pass
-
-
-class _FilePartition(_Partition):
-    def __init__(self, file: Path):
-        self._file = file
+    def __init__(self, path: Path, sk_attribute: str):
+        self._sk_attribute = sk_attribute
+        self._file = path / "data.pickle"
 
     def _load(self) -> SortedDict:
         # TODO not thread save
@@ -72,18 +60,43 @@ class _FilePartition(_Partition):
 
     def add_item(self, key, item: dict):
         with self.write_access() as tree:
-            tree: SortedDict
-            tree[key] = item
+            _Partition._put(tree, key, item)
+
+    @staticmethod
+    def _put(tree, key, item):
+        tree[key] = item
 
     def get_item(self, key) -> Optional[dict]:
         with self.read_access() as tree:
-            tree: SortedDict
-            return tree.get(key)
+            return _Partition._get(tree, key)
+
+    @staticmethod
+    def _get(tree, key):
+        return tree.get(key)
 
     def delete_item(self, key):
         with self.write_access() as tree:
-            tree: SortedDict
-            del tree[key]
+            _Partition._delete(tree, key)
+
+    @staticmethod
+    def _delete(tree, key):
+        del tree[key]
+
+    def execute_write_batch(self, actions: List[Action]):
+        """
+        Provides write access within a single load/store flow.
+        :param actions: Actions to execute, supports PUT and DELETE
+        """
+        with self.write_access() as tree:
+            for action in actions:
+                sk = action.data.get(self._sk_attribute)
+
+                if action.op == "PUT":
+                    _Partition._put(tree, sk, action.data)
+                elif action.op == "DELETE":
+                    _Partition._delete(tree, sk)
+                else:
+                    warnings.warn(f"Unknown action: {action.op}")
 
     def query(self, starts_with: Optional[str], scan_index_forward: bool) -> List:
         with self.read_access() as tree:
@@ -94,6 +107,31 @@ class _FilePartition(_Partition):
                 return [tree[sk] for sk in tree.irange(maximum=starts_with, reverse=True)]
 
 
+class BatchWriter:
+    def __init__(self, db: "Dynafile", pk_attribute: str):
+        self._db = db
+        self._queue: Optional[List[Action]] = None
+        self._pk_attribute = pk_attribute
+
+    def put_item(self, *, item: dict):
+        self._queue.append(Action("PUT", item))
+
+    def delete_item(self, *, key: dict):
+        self._queue.append(Action("DELETE", key))
+
+    def __enter__(self):
+        if self._queue:
+            warnings.warn("Unprocessed items dropped, overlapping contexts")
+        self._queue = []
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Group by partition and batch write and delete
+        queue = self._queue
+        self._queue = None
+        self._db.execute_batch(queue)
+
+
 class Dynafile:
     """
     Interface to the Dynafile DB
@@ -101,52 +139,79 @@ class Dynafile:
 
     def __init__(self, path: Union[str, Path] = "", pk_attribute="PK", sk_attribute="SK"):
         self._path = Path(path)
+        self._partition_path = self._path / "_partitions"
 
         self._partitions: [bytes, _Partition] = {}
 
-        self._pk = pk_attribute
-        self._sk = sk_attribute
+        self._pk_attribute = pk_attribute
+        self._sk_attribute = sk_attribute
 
-    def new_pratition(self, hash):
-        return _FilePartition(file=self._path / "_partitions" / f"{hash}.json")
+    def _new_pratition(self, hash):
+        return _Partition(path=self._partition_path / hash, sk_attribute=self._sk_attribute)
 
     def put_item(self, *, item: dict):
-        pk = item.get(self._pk)
-        sk = item.get(self._sk)
+        pk = item.get(self._pk_attribute)
+        sk = item.get(self._sk_attribute)
         # if pk is None:
         #     raise Exception("Partition key have to be set")
 
         partition = self._get_partition(pk)
         partition.add_item(key=sk, item=item)
 
+    def batch_writer(self) -> BatchWriter:
+        """Allow batched `put_item` and `delete_item` calls, loading partition only ones"""
+        return BatchWriter(self, self._pk_attribute)
+
     def get_item(self, *, key: dict) -> Optional[dict]:
-        pk = key.get(self._pk)
+        pk = key.get(self._pk_attribute)
         # if pk is None:
         #     raise Exception("Partition key have to be set")
         partition = self._get_partition((pk))
 
-        sk = key.get(self._sk)
+        sk = key.get(self._sk_attribute)
         # if sk is None:
         #     raise Exception("Sort key have to be set")
         return partition.get_item(sk)
 
     def delete_item(self, *, key: dict):
-        pk = key.get(self._pk)
+        pk = key.get(self._pk_attribute)
         # if pk is None:
         #     raise Exception("Partition key have to be set")
-        partition = self._get_partition((pk))
+        partition = self._get_partition(pk)
 
-        sk = key.get(self._sk)
+        sk = key.get(self._sk_attribute)
         # if sk is None:
         #     raise Exception("Sort key have to be set")
         partition.delete_item(sk)
+
+    def execute_batch(self, actions: List[Action]):
+        """
+        Write all batches.
+
+        :param actions:
+        :return:
+        """
+        # Group by partition
+        per_partition = {
+            partition: list(ops)
+            for partition, ops in groupby(actions, key=lambda a: a.data.get(self._pk_attribute))
+        }
+
+        # Consolidate?
+        # TODO optimisation: only apply last action, drop others
+
+        # Execute
+        for key, ops in per_partition.items():
+            # TODO might be parallel
+            partition = self._get_partition(key)
+            partition.execute_write_batch(ops)
 
     def _get_partition(self, partition_key: str) -> _Partition:
         """Read partition from files"""
         partition_hash = Dynafile._hash_key(partition_key)
         partition = self._partitions.get(partition_hash)
         if partition is None:
-            partition = self.new_pratition(partition_hash)
+            partition = self._new_pratition(partition_hash)
             self._partitions[partition_key] = partition
 
         return partition
@@ -158,8 +223,8 @@ class Dynafile:
     def scan(self, _filter: Optional[Filter] = None):
         _filter = self.__parse_filter(_filter)
 
-        for file in (self._path / "_partitions").glob("*.json"):
-            partition = _FilePartition(file)
+        for file in self._partition_path.glob("*/"):
+            partition = _Partition(path=file, sk_attribute=self._sk_attribute)
             for item in partition.query(None, True):
                 if _filter(item):
                     yield item

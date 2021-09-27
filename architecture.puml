@@ -1,0 +1,37 @@
+@startuml
+!theme spacelab
+
+package "API" {
+  card Dynafile [
+    Dynafile
+    ----
+    Provides API, owns DB folder, holds _Partitions.
+  ]
+
+  [Dynafile] -up- PUT
+  [Dynafile] -up- DELETE
+  [Dynafile] -up- QUERY
+  [Dynafile] -up- SCAN
+}
+
+package intern {
+    collections _Partition [
+    _Partition
+    ----
+    Provides access to a particular partition file.
+    Sorted by a sort key, optionally contains local secondary index.
+    ]
+}
+
+
+database "_partitions/<hash>/..." as FSP {
+    file "data.pickle" as data
+    file "sli-attr1.pickle" as sli1
+}
+
+
+[Dynafile] --> [_Partition]
+[_Partition] --> FSP
+
+
+@enduml
