@@ -44,10 +44,10 @@ Differences:
 - scan - filter
 - batch writer
 - atomic file write
+- event stream hooks (put, delete)
 
 ## Roadmap
 
-- event stream hooks
 - GSI - global secondary index
 - update item
 - batch get
@@ -66,6 +66,7 @@ Differences:
 ```python
 from dynafile import *
 
+# init DB interface
 db = Dynafile(path=".", pk_attribute="PK", sk_attribute="SK")
 
 # put items
@@ -89,6 +90,15 @@ items = list(db.query(pk="user#1"))
 
 # scan full table
 items = list(db.scan())
+
+# add event stream listener to retrieve item modification
+def print_listener(event: Event):
+    print(event.action)
+    print(event.old)
+    print(event.new)
+
+
+db.add_stream_listener(print_listener)
 
 ```
 

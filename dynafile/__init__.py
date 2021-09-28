@@ -8,11 +8,18 @@ from typing import Union, Optional, List, Callable, NamedTuple
 from atomicwrites import atomic_write
 from sortedcontainers import SortedDict
 
-Filter = Union[Callable, "str"]
+from dynafile.dispatcher import Dispatcher, Event, EventListener
+
+Filter = Union[Callable[[dict], bool], "str"]
+
+
+class ActionType:
+    PUT = "PUT"
+    DELETE = "DELETE"
 
 
 class Action(NamedTuple):
-    op: str
+    op: ActionType
     data: dict  # contains only key attributes for DELETE calls or the whole item in case of PUT calls
 
 
@@ -24,9 +31,11 @@ class _Partition:
     Partition organizes items only by the sort key attribute.
     """
 
-    def __init__(self, path: Path, sk_attribute: str):
+    def __init__(self, path: Path, sk_attribute: str, dispatcher: Optional[Dispatcher] = None):
         self._sk_attribute = sk_attribute
         self._file = path / "data.pickle"
+
+        self._dispatcher = dispatcher
 
     def _load(self) -> SortedDict:
         # TODO not thread save
@@ -62,11 +71,14 @@ class _Partition:
 
     def add_item(self, key, item: dict):
         with self.write_access() as tree:
-            _Partition._put(tree, key, item)
+            self._put(tree, key, item)
 
-    @staticmethod
-    def _put(tree, key, item):
+    def _put(self, tree, key, item):
+        old = tree.get(key)
         tree[key] = item
+
+        if self._dispatcher:
+            self._dispatcher.emit(Event(action=ActionType.PUT, new=item, old=old))
 
     def get_item(self, key) -> Optional[dict]:
         with self.read_access() as tree:
@@ -78,11 +90,14 @@ class _Partition:
 
     def delete_item(self, key):
         with self.write_access() as tree:
-            _Partition._delete(tree, key)
+            self._delete(tree, key)
 
-    @staticmethod
-    def _delete(tree, key):
+    def _delete(self, tree, key):
+        old = tree[key]
         del tree[key]
+
+        if self._dispatcher:
+            self._dispatcher.emit(Event(action=ActionType.DELETE, new=None, old=old))
 
     def execute_write_batch(self, actions: List[Action]):
         """
@@ -93,10 +108,10 @@ class _Partition:
             for action in actions:
                 sk = action.data.get(self._sk_attribute)
 
-                if action.op == "PUT":
-                    _Partition._put(tree, sk, action.data)
-                elif action.op == "DELETE":
-                    _Partition._delete(tree, sk)
+                if action.op == ActionType.PUT:
+                    self._put(tree, sk, action.data)
+                elif action.op == ActionType.DELETE:
+                    self._delete(tree, sk)
                 else:
                     warnings.warn(f"Unknown action: {action.op}")
 
@@ -116,10 +131,10 @@ class BatchWriter:
         self._pk_attribute = pk_attribute
 
     def put_item(self, *, item: dict):
-        self._queue.append(Action("PUT", item))
+        self._queue.append(Action(ActionType.PUT, item))
 
     def delete_item(self, *, key: dict):
-        self._queue.append(Action("DELETE", key))
+        self._queue.append(Action(ActionType.DELETE, key))
 
     def __enter__(self):
         if self._queue:
@@ -148,8 +163,14 @@ class Dynafile:
         self._pk_attribute = pk_attribute
         self._sk_attribute = sk_attribute
 
+        self._dispatcher = Dispatcher()
+
     def _new_pratition(self, hash):
-        return _Partition(path=self._partition_path / hash, sk_attribute=self._sk_attribute)
+        return _Partition(
+            path=self._partition_path / hash,
+            sk_attribute=self._sk_attribute,
+            dispatcher=self._dispatcher
+        )
 
     def put_item(self, *, item: dict):
         pk = item.get(self._pk_attribute)
@@ -250,3 +271,6 @@ class Dynafile:
                 return filtration.Expression.parseString(_filter)
             except ImportError:
                 raise Exception("String filter expressions only available if `filtration` is installed.")
+
+    def add_stream_listener(self, listener: EventListener):
+        self._dispatcher.connect(listener)
