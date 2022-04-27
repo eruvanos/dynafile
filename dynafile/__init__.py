@@ -211,7 +211,7 @@ class Dynafile:
         item = partition.get_item(sk)
 
         # expire items
-        if self._ttl_should_delete(item):
+        if item is not None and self._ttl_should_delete(item):
             self.delete_item(key=item)
             return None
 
