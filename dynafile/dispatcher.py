@@ -14,7 +14,7 @@ class Dispatcher:
     def __init__(self):
         self._listeners: List[EventListener] = []
 
-    def emit(self, event):
+    def emit(self, event: Event):
         for listener in self._listeners:
             listener(event)
 

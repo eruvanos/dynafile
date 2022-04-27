@@ -1,22 +1,25 @@
 [tool.poetry]
 name = "dynafile"
 version = "0.1.0"
-description = "NoSQLDB following the DynamoDB concept, but for a filebased embedded db."
+description = "NoSQLDB following the Dynamo concept, but for a filebased embedded db."
 authors = ["Maic Siemering <maic@siemering.tech>"]
 license = "MIT"
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
 sortedcontainers = "^2.4.0"
 atomicwrites = "^1.4.0"
+filtration = {version = "^2.3.0", optional = true}
 
 [tool.poetry.extras]
 filter = ["filtration"]
 
 [tool.poetry.dev-dependencies]
-pytest = "^6.2.5"
-black = "^21.9b0"
+pytest = "^7.1.2"
+black = "^22.3.0"
 pytest-benchmark = "^3.4.1"
+time-machine = "^2.6.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

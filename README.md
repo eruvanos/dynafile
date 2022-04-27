@@ -45,6 +45,7 @@ Differences:
 - batch writer
 - atomic file write
 - event stream hooks (put, delete)
+- TTL
 
 ## Roadmap
 
@@ -58,7 +59,6 @@ Differences:
 - transactions
 - optimise disc load time (cache partitions in memory, invalidate on file change)
 - conditional put item
-- TTL
 - improve file consistency (options: acidfile)
 
 ## API
@@ -126,9 +126,26 @@ Examples:
 * `SK == 1` - SK is equal 1
 * `nested.a == 1` - accesses nested structure `item.nested.a`
 
+### TTL - Time To Live
+
+TTL provides the option to expire items on read time (get, query, scan).
+
+```python
+import time
+from dynafile import *
+
+db = Dynafile(path=".", pk_attribute="PK", sk_attribute="SK", ttl_attribute="ttl")
+
+item = {"PK": "1", "SK": "2", "ttl": time.time() - 1000} # expired ttl
+db.put_item(item=item)
+
+list(db.scan()) # -> []
+
+```
+
 ## Architecture
 
-![architecture.puml](architecture.png)
+![architecture.puml](https://github.com/eruvanos/dynafile/blob/9bf858e83ff5761cffca10a18b4554fe5ba2d3c7/architecture.png?raw=true)
 
 ### File Structure
 
