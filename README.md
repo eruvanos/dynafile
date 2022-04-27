@@ -1,4 +1,4 @@
-> Consider the project of a proof of concept! Definitely not production ready!
+> Consider the project as a proof of concept! Definitely not production ready!
 
 # Dynafile
 
