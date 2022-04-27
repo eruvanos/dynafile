@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dynafile"
-version = "0.1.1"
+version = "0.1.2"
 description = "NoSQLDB following the Dynamo concept, but for a filebased embedded db."
 authors = ["Maic Siemering <maic@siemering.tech>"]
 license = "MIT"

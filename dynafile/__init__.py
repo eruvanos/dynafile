@@ -266,10 +266,11 @@ class Dynafile:
     def _hash_key(key: str) -> str:
         return hashlib.sha256(key.encode()).hexdigest()
 
-    def _ttl_should_delete(self, item: dict) -> True:
-        if self._ttl_attribute:
+    def _ttl_should_delete(self, item: dict) -> bool:
+        if self._ttl_attribute and item:
             ttl = item.get(self._ttl_attribute)
             return ttl and ttl < time.time()
+        return False
 
     def scan(self, _filter: Optional[Filter] = None) -> Iterable[dict]:
         _filter = self.__parse_filter(_filter)
