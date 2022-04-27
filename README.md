@@ -46,9 +46,12 @@ Differences:
 - atomic file write
 - event stream hooks (put, delete)
 
+## WIP
+- GSI - global secondary index
+
 ## Roadmap
 
-- GSI - global secondary index
+- TTL
 - update item
 - batch get
 - thread safeness
@@ -58,8 +61,8 @@ Differences:
 - transactions
 - optimise disc load time (cache partitions in memory, invalidate on file change)
 - conditional put item
-- TTL
 - improve file consistency (options: acidfile)
+- asyncio partition access
 
 ## API
 

@@ -1,9 +1,11 @@
 import hashlib
+import json
 import warnings
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
 from itertools import groupby
 from pathlib import Path
-from typing import Union, Optional, List, Callable, NamedTuple
+from typing import Union, Optional, List, Callable, NamedTuple, Dict
 
 from atomicwrites import atomic_write
 from sortedcontainers import SortedDict
@@ -31,7 +33,9 @@ class _Partition:
     Partition organizes items only by the sort key attribute.
     """
 
-    def __init__(self, path: Path, sk_attribute: str, dispatcher: Optional[Dispatcher] = None):
+    def __init__(
+        self, path: Path, sk_attribute: str, dispatcher: Optional[Dispatcher] = None
+    ):
         self._sk_attribute = sk_attribute
         self._file = path / "data.pickle"
 
@@ -40,6 +44,7 @@ class _Partition:
     def _load(self) -> SortedDict:
         # TODO not thread save
         import pickle
+
         if self._file.exists():
             with self._file.open("rb") as file:
                 return pickle.load(file)
@@ -49,6 +54,7 @@ class _Partition:
     def _save(self, data: SortedDict):
         # TODO not thread save
         import pickle
+
         self._file.parent.mkdir(parents=True, exist_ok=True)
 
         with atomic_write(self._file, mode="wb", overwrite=True) as file:
@@ -121,7 +127,9 @@ class _Partition:
             if scan_index_forward:
                 return [tree[sk] for sk in tree.irange(minimum=starts_with)]
             else:
-                return [tree[sk] for sk in tree.irange(maximum=starts_with, reverse=True)]
+                return [
+                    tree[sk] for sk in tree.irange(maximum=starts_with, reverse=True)
+                ]
 
 
 class BatchWriter:
@@ -149,27 +157,68 @@ class BatchWriter:
         self._db.execute_batch(queue)
 
 
+@dataclass
+class _MetaData:
+    pk_attribute: str
+    sk_attribute: str
+
+
 class Dynafile:
     """
     Interface to the Dynafile DB
     """
 
-    def __init__(self, path: Union[str, Path] = "", pk_attribute="PK", sk_attribute="SK"):
+    def __init__(
+        self, path: Union[str, Path] = "", pk_attribute=None, sk_attribute=None
+    ):
+        # TODO split constructor into a static create new table and load only constructor
         self._path = Path(path)
+        self._meta_file = self._path / "meta.json"
         self._partition_path = self._path / "_partitions"
+        self._gsi_path = self._path / "_gsi"
 
-        self._partitions: [bytes, _Partition] = {}
+        # ensure path
+        self._path.mkdir(parents=True, exist_ok=True)
+
+        # meta data
+        if self._meta_file.exists():
+            with self._meta_file.open() as file:
+                meta_data = _MetaData(**json.load(file))
+
+            if pk_attribute is None and sk_attribute is None:
+                pk_attribute = meta_data.pk_attribute
+                sk_attribute = meta_data.sk_attribute
+
+            elif (
+                meta_data.pk_attribute != pk_attribute
+                or meta_data.sk_attribute != sk_attribute
+            ):
+                raise Exception("PK or SK attribute different from existing data.")
+        else:
+            pk_attribute = pk_attribute or "PK"
+            sk_attribute = sk_attribute or "SK"
+
+            meta_data = _MetaData(pk_attribute=pk_attribute, sk_attribute=sk_attribute)
+            meta_data_dict = asdict(meta_data)
+
+            with atomic_write(self._meta_file, mode="wt", overwrite=False) as file:
+                json.dump(meta_data_dict, file)
 
         self._pk_attribute = pk_attribute
         self._sk_attribute = sk_attribute
 
-        self._dispatcher = Dispatcher()
+        self._gsis: Dict[str, Dynafile] = {}
+        for path in self._gsi_path.glob("*/"):
+            self._gsis[path.name] = Dynafile(path)
 
-    def _new_pratition(self, hash):
+        self._dispatcher = Dispatcher()
+        self._dispatcher.connect(self.__sync_gsi)
+
+    def _new_partition(self, hash):
         return _Partition(
             path=self._partition_path / hash,
             sk_attribute=self._sk_attribute,
-            dispatcher=self._dispatcher
+            dispatcher=self._dispatcher,
         )
 
     def put_item(self, *, item: dict):
@@ -217,7 +266,9 @@ class Dynafile:
         # Group by partition
         per_partition = {
             partition: list(ops)
-            for partition, ops in groupby(actions, key=lambda a: a.data.get(self._pk_attribute))
+            for partition, ops in groupby(
+                actions, key=lambda a: a.data.get(self._pk_attribute)
+            )
         }
 
         # Consolidate?
@@ -232,12 +283,7 @@ class Dynafile:
     def _get_partition(self, partition_key: str) -> _Partition:
         """Read partition from files"""
         partition_hash = Dynafile._hash_key(partition_key)
-        partition = self._partitions.get(partition_hash)
-        if partition is None:
-            partition = self._new_pratition(partition_hash)
-            self._partitions[partition_key] = partition
-
-        return partition
+        return self._new_partition(partition_hash)
 
     @staticmethod
     def _hash_key(key: str) -> str:
@@ -252,11 +298,26 @@ class Dynafile:
                 if _filter(item):
                     yield item
 
-    def query(self, pk, starts_with="", scan_index_forward=True, _filter: Optional[Filter] = None):
-        _filter = self.__parse_filter(_filter)
+    def query(
+        self,
+        pk: str,
+        starts_with="",
+        scan_index_forward=True,
+        _filter: Optional[Filter] = None,
+        index=None,
+    ):
+        if index is None:
+            db = self
+        elif index in self._gsis:
+            db = self._gsis[index]
+        else:
+            raise Exception("Index does not exist")
 
-        partition = self._get_partition(pk)
-        for item in partition.query(starts_with=starts_with, scan_index_forward=scan_index_forward):
+        _filter = db.__parse_filter(_filter)
+        partition = db._get_partition(pk)
+        for item in partition.query(
+            starts_with=starts_with, scan_index_forward=scan_index_forward
+        ):
             if _filter(item):
                 yield item
 
@@ -268,9 +329,46 @@ class Dynafile:
         elif type(_filter) is str:
             try:
                 import filtration
+
                 return filtration.Expression.parseString(_filter)
             except ImportError:
-                raise Exception("String filter expressions only available if `filtration` is installed.")
+                raise Exception(
+                    "String filter expressions only available if `filtration` is installed."
+                )
 
     def add_stream_listener(self, listener: EventListener):
         self._dispatcher.connect(listener)
+
+    def extract_key(self, item: dict):
+        return {key: item[key] for key in (self._pk_attribute, self._sk_attribute)}
+
+    def contains_key_attributes(self, item: dict):
+        return self._pk_attribute in item and self._sk_attribute in item
+
+    def create_gsi(self, name: str, pk_attribute: str, sk_attribute: str):
+        if name in self._gsis:
+            raise Exception("GSI already exists")
+
+        # add new GSI
+        self._gsis[name] = Dynafile(
+            path=self._path / f"_gsi/{name}",
+            pk_attribute=pk_attribute,
+            sk_attribute=sk_attribute,
+        )
+
+        # backfill GSI
+        for item in self.scan():
+            for name, gsi in self._gsis.items():
+                if gsi.contains_key_attributes(item):
+                    self._gsis[name].put_item(item=item)
+
+    def __sync_gsi(self, event: Event):
+        if event.action == ActionType.DELETE:
+            for gsi in self._gsis.values():
+                if gsi.contains_key_attributes(event.old):
+                    gsi.delete_item(key=event.old)
+
+        elif event.action == ActionType.PUT:
+            for gsi in self._gsis.values():
+                if gsi.contains_key_attributes(event.new):
+                    gsi.put_item(item=event.new)
