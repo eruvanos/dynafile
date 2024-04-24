@@ -56,6 +56,7 @@ def test_query_backwords(tmp_path):
 
     assert items == [ab, aa]
 
+
 def test_query_with_callable_filter(tmp_path):
     db = Dynafile(tmp_path / "db")
 
@@ -130,16 +131,12 @@ def test_query_with_string_filter_nested(tmp_path):
     aa = {
         "PK": "1",
         "SK": "aa",
-        "data": {
-            "count": 0
-        },
+        "data": {"count": 0},
     }
     ab = {
         "PK": "1",
         "SK": "ab",
-        "data": {
-            "count": 1
-        },
+        "data": {"count": 1},
     }
 
     db.put_item(item=aa)

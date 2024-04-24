@@ -311,7 +311,7 @@ class Dynafile:
             return bool
         elif callable(_filter):
             return _filter
-        elif type(_filter) is str:
+        elif isinstance(_filter, str):
             try:
                 import filtration
 

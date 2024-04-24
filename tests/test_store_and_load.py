@@ -30,7 +30,12 @@ def test_persistent(tmp_path):
 
 def test_delete(tmp_path):
     db = Dynafile(tmp_path / "db")
-    db.put_item(item={"PK": "1", "SK": "1", })
+    db.put_item(
+        item={
+            "PK": "1",
+            "SK": "1",
+        }
+    )
 
     db.delete_item(key={"PK": "1", "SK": "1"})
 
@@ -42,9 +47,7 @@ def test_batch_write(tmp_path):
     db = Dynafile(tmp_path / "db")
 
     with db.batch_writer() as writer:
-        writer.put_item(
-            item={"PK": "1", "SK": "2", "name": "Dynafile"}
-        )
+        writer.put_item(item={"PK": "1", "SK": "2", "name": "Dynafile"})
 
     item = db.get_item(key={"PK": "1", "SK": "2"})
     assert item["name"] == "Dynafile"
@@ -54,8 +57,18 @@ def test_batch_write_with_delete(tmp_path):
     db = Dynafile(tmp_path / "db")
 
     with db.batch_writer() as writer:
-        writer.put_item(item={"PK": "1", "SK": "1", })
-        writer.put_item(item={"PK": "1", "SK": "2", })
+        writer.put_item(
+            item={
+                "PK": "1",
+                "SK": "1",
+            }
+        )
+        writer.put_item(
+            item={
+                "PK": "1",
+                "SK": "2",
+            }
+        )
         writer.delete_item(key={"PK": "1", "SK": "2"})
 
     item = db.get_item(key={"PK": "1", "SK": "2"})

@@ -1,8 +1,8 @@
-[tool.poetry]
+[project]
 name = "dynafile"
-version = "0.1.2"
+version = "0.1.3"
 description = "NoSQLDB following the Dynamo concept, but for a filebased embedded db."
-authors = ["Maic Siemering <maic@siemering.tech>"]
+authors = [{name = "Maic Siemering", email = "maic@siemering.tech"}]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/eruvanos/dynafile"
@@ -19,31 +19,43 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
 
-packages = [
-    { include = "dynafile" }
+dependencies = [
+    "sortedcontainers>=2.4.0",
+    "atomicwrites>=1.4.1",
+]
+requires-python = ">= 3.8"
+
+[project.optional-dependencies]
+filter = [
+    "filtration>=2.3.0",
 ]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-sortedcontainers = "^2.4.0"
-atomicwrites = "^1.4.0"
-filtration = {version = "^2.3.0", optional = true}
+[tool.rye.scripts]
 
-[tool.poetry.extras]
-filter = ["filtration"]
-
-[tool.poetry.dev-dependencies]
-pytest = "^7.1.2"
-pytest-benchmark = "^3.4.1"
-time-machine = "^2.6.0"
-black = {version = "^22.3.0", optional = true}
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pytest>=8.1.1",
+    "pytest-benchmark>=4.0.0",
+    "time-machine>=2.14.1",
+    "ruff>=0.4.1",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dynafile"]

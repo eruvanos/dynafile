@@ -58,7 +58,9 @@ def test_scan_with_callable_filter(tmp_path):
     db.put_item(item=ac)
     db.put_item(item=ba)
 
-    items = set(map(itemgetter("SK"), db.scan(_filter=lambda i: i["SK"].startswith("a"))))
+    items = set(
+        map(itemgetter("SK"), db.scan(_filter=lambda i: i["SK"].startswith("a")))
+    )
 
     assert items == {"aa", "ab", "ac"}
 

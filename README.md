@@ -49,17 +49,17 @@ Differences:
 
 ## Roadmap
 
-- GSI - global secondary index
-- update item
-- batch get
-- thread safeness
-- LSI - local secondary index
-- split partitions
-- parallel scans - pre defined scan segments
-- transactions
-- optimise disc load time (cache partitions in memory, invalidate on file change)
-- conditional put item
-- improve file consistency (options: acidfile)
+- [ ] GSI - global secondary index
+- [ ] update item
+- [ ] batch get
+- [ ] thread safeness
+- [ ] ~~LSI - local secondary index~~
+- [ ] split partitions
+- [ ] parallel scans - pre defined scan segments
+- [ ] transactions
+- [ ] optimise disc load time (cache partitions in memory, invalidate on file change)
+- [ ] conditional put item
+- [ ] improve file consistency (options: acidfile)
 
 ## API
 
